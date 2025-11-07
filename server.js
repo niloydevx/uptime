@@ -13,19 +13,55 @@ app.use(express.static(path.join(__dirname, 'public')));
 const DATA_FILE = path.join(__dirname, 'monitors.json');
 const DEFAULT_INTERVAL_MS = 5000; // 5s
 
-/** In-memory state; interval handles kept here (won't be written to JSON) */
+// Firebase configuration
+const FIREBASE_URL = "https://test-6977e-default-rtdb.firebaseio.com";
+const MONITORS_PATH = "/monitors";
+
+/** In-memory state; interval handles kept here (won't be written to Firebase) */
 const state = {
   monitors: new Map(), // id -> { id, url, intervalMs, history[], lastStatus, lastLatency, lastChecked, enabled }
   timers: new Map()    // id -> setInterval handle
 };
 
-/** Load monitors from disk (without timers), then start them */
-function loadMonitors() {
-  if (fs.existsSync(DATA_FILE)) {
-    try {
-      const raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-      if (Array.isArray(raw)) {
-        raw.forEach(m => {
+/** Firebase API helpers */
+async function firebaseGet(path) {
+  try {
+    const response = await axios.get(`${FIREBASE_URL}${path}.json`);
+    return response.data;
+  } catch (error) {
+    console.error('Firebase GET error:', error.message);
+    return null;
+  }
+}
+
+async function firebasePut(path, data) {
+  try {
+    const response = await axios.put(`${FIREBASE_URL}${path}.json`, data);
+    return response.data;
+  } catch (error) {
+    console.error('Firebase PUT error:', error.message);
+    return null;
+  }
+}
+
+async function firebaseDelete(path) {
+  try {
+    await axios.delete(`${FIREBASE_URL}${path}.json`);
+    return true;
+  } catch (error) {
+    console.error('Firebase DELETE error:', error.message);
+    return false;
+  }
+}
+
+/** Load monitors from Firebase, then start them */
+async function loadMonitors() {
+  try {
+    const data = await firebaseGet(MONITORS_PATH);
+    
+    if (data && typeof data === 'object') {
+      Object.values(data).forEach(m => {
+        if (m && m.url) {
           // ensure minimal shape
           const monitor = {
             id: m.id || nanoid(8),
@@ -38,31 +74,81 @@ function loadMonitors() {
             enabled: m.enabled !== false
           };
           state.monitors.set(monitor.id, monitor);
-        });
-      }
-    } catch (e) {
-      console.error('Failed to read monitors.json:', e.message);
+        }
+      });
+      console.log(`Loaded ${state.monitors.size} monitors from Firebase`);
     }
+  } catch (e) {
+    console.error('Failed to load monitors from Firebase:', e.message);
+    // Fallback to local file if Firebase fails
+    loadMonitorsFromFile();
   }
+  
   // start timers
   for (const m of state.monitors.values()) {
     if (m.enabled) startTimer(m.id);
   }
 }
 
-/** Persist monitors (without timer handles) */
-function saveMonitors() {
-  const arr = Array.from(state.monitors.values()).map(m => ({
-    id: m.id,
-    url: m.url,
-    intervalMs: m.intervalMs,
-    history: m.history.slice(-200),
-    lastStatus: m.lastStatus,
-    lastLatency: m.lastLatency,
-    lastChecked: m.lastChecked,
-    enabled: m.enabled
-  }));
-  fs.writeFileSync(DATA_FILE, JSON.stringify(arr, null, 2));
+/** Fallback: Load monitors from disk */
+function loadMonitorsFromFile() {
+  if (fs.existsSync(DATA_FILE)) {
+    try {
+      const raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+      if (Array.isArray(raw)) {
+        raw.forEach(m => {
+          const monitor = {
+            id: m.id || nanoid(8),
+            url: m.url,
+            intervalMs: Number(m.intervalMs) > 1000 ? Number(m.intervalMs) : DEFAULT_INTERVAL_MS,
+            history: Array.isArray(m.history) ? m.history.slice(-200) : [],
+            lastStatus: m.lastStatus ?? null,
+            lastLatency: m.lastLatency ?? null,
+            lastChecked: m.lastChecked ?? null,
+            enabled: m.enabled !== false
+          };
+          state.monitors.set(monitor.id, monitor);
+        });
+        console.log(`Loaded ${state.monitors.size} monitors from local file`);
+      }
+    } catch (e) {
+      console.error('Failed to read monitors.json:', e.message);
+    }
+  }
+}
+
+/** Persist monitors to Firebase */
+async function saveMonitors() {
+  const monitorsObj = {};
+  for (const [id, monitor] of state.monitors) {
+    monitorsObj[id] = {
+      id: monitor.id,
+      url: monitor.url,
+      intervalMs: monitor.intervalMs,
+      history: monitor.history.slice(-200),
+      lastStatus: monitor.lastStatus,
+      lastLatency: monitor.lastLatency,
+      lastChecked: monitor.lastChecked,
+      enabled: monitor.enabled
+    };
+  }
+  
+  const success = await firebasePut(MONITORS_PATH, monitorsObj);
+  if (!success) {
+    // Fallback to local file if Firebase fails
+    saveMonitorsToFile(monitorsObj);
+  }
+}
+
+/** Fallback: Save monitors to local file */
+function saveMonitorsToFile(monitorsObj) {
+  try {
+    const arr = Object.values(monitorsObj);
+    fs.writeFileSync(DATA_FILE, JSON.stringify(arr, null, 2));
+    console.log('Saved monitors to local file (Firebase backup)');
+  } catch (error) {
+    console.error('Failed to save monitors to local file:', error.message);
+  }
 }
 
 /** Ping a URL and record result */
@@ -158,7 +244,7 @@ app.get('/api/monitors/:id', (req, res) => {
 });
 
 /** Create one monitor */
-app.post('/api/monitors', (req, res) => {
+app.post('/api/monitors', async (req, res) => {
   let { url, intervalMs } = req.body || {};
   if (!url || typeof url !== 'string') {
     return res.status(400).json({ error: 'url is required' });
@@ -183,13 +269,13 @@ app.post('/api/monitors', (req, res) => {
     enabled: true
   };
   state.monitors.set(id, monitor);
-  saveMonitors();
+  await saveMonitors();
   startTimer(id);
   res.status(201).json(monitor);
 });
 
 /** Create many monitors at once: { urls: string[], intervalMs? } */
-app.post('/api/monitors/bulk', (req, res) => {
+app.post('/api/monitors/bulk', async (req, res) => {
   const { urls, intervalMs } = req.body || {};
   if (!Array.isArray(urls) || urls.length === 0) {
     return res.status(400).json({ error: 'urls[] is required' });
@@ -215,12 +301,12 @@ app.post('/api/monitors/bulk', (req, res) => {
     startTimer(id);
     made.push(m);
   }
-  saveMonitors();
+  await saveMonitors();
   res.status(201).json(made);
 });
 
 /** Update monitor (interval, url, enable/disable) */
-app.patch('/api/monitors/:id', (req, res) => {
+app.patch('/api/monitors/:id', async (req, res) => {
   const m = state.monitors.get(req.params.id);
   if (!m) return res.status(404).json({ error: 'Not found' });
   const { url, intervalMs, enabled } = req.body || {};
@@ -234,19 +320,25 @@ app.patch('/api/monitors/:id', (req, res) => {
   if (enabled !== undefined) {
     m.enabled = !!enabled;
   }
-  saveMonitors();
+  await saveMonitors();
   if (m.enabled) startTimer(m.id); else stopTimer(m.id);
   res.json(m);
 });
 
 /** Delete monitor */
-app.delete('/api/monitors/:id', (req, res) => {
+app.delete('/api/monitors/:id', async (req, res) => {
   const existed = state.monitors.has(req.params.id);
   if (!existed) return res.status(404).json({ error: 'Not found' });
   stopTimer(req.params.id);
   state.monitors.delete(req.params.id);
-  saveMonitors();
+  await saveMonitors();
   res.json({ ok: true });
+});
+
+/** Sync all monitors to Firebase (manual trigger) */
+app.post('/api/sync', async (req, res) => {
+  await saveMonitors();
+  res.json({ ok: true, message: 'Synced to Firebase' });
 });
 
 /** Health of the server itself */
@@ -254,11 +346,22 @@ app.get('/health', (_req, res) => res.json({ ok: true }));
 
 /** Boot */
 const PORT = process.env.PORT || 3000;
-loadMonitors();
-process.on('SIGINT', () => { saveMonitors(); process.exit(0); });
-process.on('SIGTERM', () => { saveMonitors(); process.exit(0); });
 
-app.listen(PORT, () => {
-  console.log(`Uptime monitor running on http://localhost:${PORT}`);
-  console.log(`Open http://localhost:${PORT} to view the dashboard`);
+// Load monitors and start server
+loadMonitors().then(() => {
+  app.listen(PORT, () => {
+    console.log(`Uptime monitor running on http://localhost:${PORT}`);
+    console.log(`Open http://localhost:${PORT} to view the dashboard`);
+    console.log(`Firebase URL: ${FIREBASE_URL}`);
+  });
+});
+
+// Graceful shutdown
+process.on('SIGINT', async () => { 
+  await saveMonitors(); 
+  process.exit(0); 
+});
+process.on('SIGTERM', async () => { 
+  await saveMonitors(); 
+  process.exit(0); 
 });
