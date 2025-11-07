@@ -116,6 +116,7 @@
       cursor: pointer;
       padding: 8px 16px;
       font-size: 13px;
+      white-space: nowrap;
     }
     
     .btn-secondary:hover {
@@ -130,6 +131,7 @@
       cursor: pointer;
       padding: 8px 16px;
       font-size: 13px;
+      white-space: nowrap;
     }
     
     .btn-danger:hover {
@@ -160,11 +162,13 @@
       font-weight: 600;
       font-size: 14px;
       color: #475569;
+      white-space: nowrap;
     }
     
     td {
       padding: 16px;
       border-bottom: 1px solid #f1f5f9;
+      white-space: nowrap;
     }
     
     .status-badge {
@@ -175,6 +179,7 @@
       font-size: 12px;
       font-weight: 600;
       gap: 6px;
+      white-space: nowrap;
     }
     
     .status-badge::before {
@@ -217,18 +222,26 @@
     .monitor-name {
       font-weight: 600;
       color: #1e293b;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 200px;
     }
     
     .monitor-url {
       font-size: 12px;
       color: #64748b;
       margin-top: 4px;
-      word-break: break-all;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 200px;
     }
     
     .uptime-value {
       font-weight: 600;
       font-size: 14px;
+      white-space: nowrap;
     }
     
     .uptime-excellent { color: #059669; }
@@ -239,6 +252,7 @@
     .latency-value {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
       font-weight: 600;
+      white-space: nowrap;
     }
     
     .latency-fast { color: #059669; }
@@ -248,6 +262,7 @@
     .last-checked {
       font-size: 13px;
       color: #64748b;
+      white-space: nowrap;
     }
     
     .interval-badge {
@@ -257,12 +272,13 @@
       border-radius: 6px;
       font-size: 12px;
       font-weight: 500;
+      white-space: nowrap;
     }
     
     .actions {
       display: flex;
       gap: 8px;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
     }
     
     .empty-state {
@@ -276,11 +292,67 @@
       opacity: 0.5;
     }
     
-    .stats-bar {
+    /* Mobile Stats - 3 rows */
+    .mobile-stats {
+      display: none;
+      grid-template-columns: 1fr;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    
+    @media (max-width: 767px) {
+      .mobile-stats {
+        display: grid;
+      }
+      
+      .desktop-stats {
+        display: none;
+      }
+    }
+    
+    .mobile-stat-card {
+      background: white;
+      padding: 16px;
+      border-radius: 8px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .mobile-stat-info {
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .mobile-stat-value {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 2px;
+    }
+    
+    .mobile-stat-label {
+      font-size: 12px;
+      color: #64748b;
+      font-weight: 500;
+    }
+    
+    .mobile-stat-up { color: #059669; }
+    .mobile-stat-down { color: #dc2626; }
+    .mobile-stat-total { color: #3b82f6; }
+    
+    /* Desktop Stats */
+    .desktop-stats {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
       gap: 16px;
       margin-bottom: 24px;
+    }
+    
+    @media (max-width: 767px) {
+      .desktop-stats {
+        display: none;
+      }
     }
     
     .stat-card {
@@ -306,16 +378,108 @@
     .stat-up { color: #059669; }
     .stat-down { color: #dc2626; }
     .stat-total { color: #3b82f6; }
+    
+    /* Pagination */
+    .pagination {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px;
+      background: white;
+      border-top: 1px solid #e2e8f0;
+    }
+    
+    .pagination-info {
+      font-size: 14px;
+      color: #64748b;
+      white-space: nowrap;
+    }
+    
+    .pagination-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    
+    .pagination-btn {
+      padding: 8px 12px;
+      border: 1px solid #d1d5db;
+      background: white;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+    
+    .pagination-btn:hover:not(:disabled) {
+      background: #f8fafc;
+    }
+    
+    .pagination-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    
+    .page-numbers {
+      display: flex;
+      gap: 4px;
+      margin: 0 12px;
+    }
+    
+    .page-number {
+      padding: 8px 12px;
+      border: 1px solid #d1d5db;
+      background: white;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      min-width: 40px;
+      text-align: center;
+      white-space: nowrap;
+    }
+    
+    .page-number.active {
+      background: #3b82f6;
+      color: white;
+      border-color: #3b82f6;
+    }
+    
+    .page-number:hover:not(.active) {
+      background: #f8fafc;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>🚀 Mini Uptime Monitor</h1>
+      <h1>🎯 Mini Uptime Monitor</h1>
       <p class="subtitle">Monitor your websites and APIs in real-time</p>
     </header>
 
-    <div class="stats-bar" id="statsBar" style="display: none;">
+    <!-- Mobile Stats (3 rows) -->
+    <div class="mobile-stats" id="mobileStats" style="display: none;">
+      <div class="mobile-stat-card">
+        <div class="mobile-stat-info">
+          <div class="mobile-stat-value mobile-stat-total" id="mobileStatTotal">0</div>
+          <div class="mobile-stat-label">Total Monitors</div>
+        </div>
+      </div>
+      <div class="mobile-stat-card">
+        <div class="mobile-stat-info">
+          <div class="mobile-stat-value mobile-stat-up" id="mobileStatUp">0</div>
+          <div class="mobile-stat-label">Up</div>
+        </div>
+      </div>
+      <div class="mobile-stat-card">
+        <div class="mobile-stat-info">
+          <div class="mobile-stat-value mobile-stat-down" id="mobileStatDown">0</div>
+          <div class="mobile-stat-label">Down</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Desktop Stats -->
+    <div class="desktop-stats" id="desktopStats" style="display: none;">
       <div class="stat-card">
         <div class="stat-value stat-total" id="statTotal">0</div>
         <div class="stat-label">Total Monitors</div>
@@ -394,13 +558,32 @@
           </tbody>
         </table>
       </div>
+      
+      <!-- Pagination -->
+      <div class="pagination" id="pagination" style="display: none;">
+        <div class="pagination-info" id="paginationInfo">
+          Showing 0 of 0 monitors
+        </div>
+        <div class="pagination-controls">
+          <button class="pagination-btn" id="prevPage" disabled>Previous</button>
+          <div class="page-numbers" id="pageNumbers"></div>
+          <button class="pagination-btn" id="nextPage" disabled>Next</button>
+        </div>
+      </div>
     </div>
   </div>
 
   <script>
     const $ = s => document.querySelector(s);
     const rows = $("#rows");
-    const statsBar = $("#statsBar");
+    const mobileStats = $("#mobileStats");
+    const desktopStats = $("#desktopStats");
+    const pagination = $("#pagination");
+
+    // Pagination state
+    let currentPage = 1;
+    const itemsPerPage = 5;
+    let allMonitors = [];
 
     function formatLatency(ms) {
       if (ms == null) return "—";
@@ -462,83 +645,142 @@
       return `<span class="status-badge status-down">DOWN (${monitor.lastStatus || 'Error'})</span>`;
     }
 
+    function updatePagination(totalItems) {
+      const totalPages = Math.ceil(totalItems / itemsPerPage);
+      const startItem = (currentPage - 1) * itemsPerPage + 1;
+      const endItem = Math.min(currentPage * itemsPerPage, totalItems);
+      
+      $("#paginationInfo").textContent = `Showing ${startItem}-${endItem} of ${totalItems} monitors`;
+      
+      // Update buttons
+      $("#prevPage").disabled = currentPage === 1;
+      $("#nextPage").disabled = currentPage === totalPages;
+      
+      // Update page numbers
+      const pageNumbersContainer = $("#pageNumbers");
+      pageNumbersContainer.innerHTML = '';
+      
+      const maxPagesToShow = 5;
+      let startPage = Math.max(1, currentPage - Math.floor(maxPagesToShow / 2));
+      let endPage = Math.min(totalPages, startPage + maxPagesToShow - 1);
+      
+      if (endPage - startPage + 1 < maxPagesToShow) {
+        startPage = Math.max(1, endPage - maxPagesToShow + 1);
+      }
+      
+      for (let i = startPage; i <= endPage; i++) {
+        const pageBtn = document.createElement('button');
+        pageBtn.className = `page-number ${i === currentPage ? 'active' : ''}`;
+        pageBtn.textContent = i;
+        pageBtn.onclick = () => goToPage(i);
+        pageNumbersContainer.appendChild(pageBtn);
+      }
+      
+      pagination.style.display = totalPages > 1 ? 'flex' : 'none';
+    }
+
+    function goToPage(page) {
+      currentPage = page;
+      renderTable();
+    }
+
+    function renderTable() {
+      if (allMonitors.length === 0) {
+        rows.innerHTML = `
+          <tr>
+            <td colspan="7">
+              <div class="empty-state">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+                  <path d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                <p>No monitors added yet. Add your first monitor above!</p>
+              </div>
+            </td>
+          </tr>
+        `;
+        pagination.style.display = 'none';
+        return;
+      }
+      
+      const startIndex = (currentPage - 1) * itemsPerPage;
+      const endIndex = startIndex + itemsPerPage;
+      const currentMonitors = allMonitors.slice(startIndex, endIndex);
+      
+      rows.innerHTML = currentMonitors.map(m => `
+        <tr>
+          <td>
+            <div class="monitor-name" title="${m.name || m.url}">${m.name || m.url}</div>
+            ${m.name ? `<div class="monitor-url" title="${m.url}">${m.url}</div>` : ''}
+          </td>
+          <td>${getStatusBadge(m)}</td>
+          <td>
+            <span class="latency-value ${getLatencyClass(m.lastLatency)}">
+              ${formatLatency(m.lastLatency)}
+            </span>
+          </td>
+          <td>
+            <span class="uptime-value ${getUptimeClass(m.uptimePct)}">
+              ${formatUptime(m.uptimePct)}
+            </span>
+          </td>
+          <td>
+            <div class="last-checked">${formatTimeAgo(m.lastChecked)}</div>
+          </td>
+          <td>
+            <span class="interval-badge">${formatInterval(m.intervalMs)}</span>
+          </td>
+          <td>
+            <div class="actions">
+              <button class="btn-secondary" onclick="toggleMonitor('${m.id}', ${!m.enabled})">
+                ${m.enabled ? 'Pause' : 'Resume'}
+              </button>
+              <button class="btn-danger" onclick="removeMonitor('${m.id}')">
+                Delete
+              </button>
+            </div>
+          </td>
+        </tr>
+      `).join('');
+      
+      updatePagination(allMonitors.length);
+    }
+
+    function updateStats(monitors) {
+      allMonitors = monitors;
+      
+      if (monitors.length === 0) {
+        mobileStats.style.display = 'none';
+        desktopStats.style.display = 'none';
+        return;
+      }
+      
+      const total = monitors.length;
+      const up = monitors.filter(m => m.lastStatus >= 200 && m.lastStatus < 400).length;
+      const down = total - up;
+      
+      // Update desktop stats
+      $("#statTotal").textContent = total;
+      $("#statUp").textContent = up;
+      $("#statDown").textContent = down;
+      desktopStats.style.display = 'grid';
+      
+      // Update mobile stats
+      $("#mobileStatTotal").textContent = total;
+      $("#mobileStatUp").textContent = up;
+      $("#mobileStatDown").textContent = down;
+      mobileStats.style.display = 'grid';
+    }
+
     async function fetchList() {
       try {
         const res = await fetch('/api/monitors');
         const data = await res.json();
         
         updateStats(data);
-        
-        if (data.length === 0) {
-          rows.innerHTML = `
-            <tr>
-              <td colspan="7">
-                <div class="empty-state">
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
-                    <path d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                  </svg>
-                  <p>No monitors added yet. Add your first monitor above!</p>
-                </div>
-              </td>
-            </tr>
-          `;
-          return;
-        }
-        
-        rows.innerHTML = data.map(m => `
-          <tr>
-            <td>
-              <div class="monitor-name">${m.name || m.url}</div>
-              ${m.name ? `<div class="monitor-url">${m.url}</div>` : ''}
-            </td>
-            <td>${getStatusBadge(m)}</td>
-            <td>
-              <span class="latency-value ${getLatencyClass(m.lastLatency)}">
-                ${formatLatency(m.lastLatency)}
-              </span>
-            </td>
-            <td>
-              <span class="uptime-value ${getUptimeClass(m.uptimePct)}">
-                ${formatUptime(m.uptimePct)}
-              </span>
-            </td>
-            <td>
-              <div class="last-checked">${formatTimeAgo(m.lastChecked)}</div>
-            </td>
-            <td>
-              <span class="interval-badge">${formatInterval(m.intervalMs)}</span>
-            </td>
-            <td>
-              <div class="actions">
-                <button class="btn-secondary" onclick="toggleMonitor('${m.id}', ${!m.enabled})">
-                  ${m.enabled ? 'Pause' : 'Resume'}
-                </button>
-                <button class="btn-danger" onclick="removeMonitor('${m.id}')">
-                  Delete
-                </button>
-              </div>
-            </td>
-          </tr>
-        `).join('');
+        renderTable();
       } catch (error) {
         console.error('Failed to fetch monitors:', error);
       }
-    }
-
-    function updateStats(monitors) {
-      if (monitors.length === 0) {
-        statsBar.style.display = 'none';
-        return;
-      }
-      
-      statsBar.style.display = 'grid';
-      const total = monitors.length;
-      const up = monitors.filter(m => m.lastStatus >= 200 && m.lastStatus < 400).length;
-      const down = total - up;
-      
-      $("#statTotal").textContent = total;
-      $("#statUp").textContent = up;
-      $("#statDown").textContent = down;
     }
 
     async function toggleMonitor(id, enabled) {
@@ -609,6 +851,10 @@
         alert('Failed to add monitor. Please try again.');
       }
     };
+
+    // Initialize pagination controls
+    $("#prevPage").onclick = () => goToPage(currentPage - 1);
+    $("#nextPage").onclick = () => goToPage(currentPage + 1);
 
     // Initialize
     fetchList();
