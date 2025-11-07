@@ -19,7 +19,7 @@ const MONITORS_PATH = "/monitors";
 
 /** In-memory state; interval handles kept here (won't be written to Firebase) */
 const state = {
-  monitors: new Map(), // id -> { id, url, intervalMs, history[], lastStatus, lastLatency, lastChecked, enabled }
+  monitors: new Map(), // id -> { id, name, url, intervalMs, history[], lastStatus, lastLatency, lastChecked, enabled }
   timers: new Map()    // id -> setInterval handle
 };
 
@@ -62,9 +62,10 @@ async function loadMonitors() {
     if (data && typeof data === 'object') {
       Object.values(data).forEach(m => {
         if (m && m.url) {
-          // ensure minimal shape
+          // ensure minimal shape with name support
           const monitor = {
             id: m.id || nanoid(8),
+            name: m.name || null,
             url: m.url,
             intervalMs: Number(m.intervalMs) > 1000 ? Number(m.intervalMs) : DEFAULT_INTERVAL_MS,
             history: Array.isArray(m.history) ? m.history.slice(-200) : [],
@@ -99,6 +100,7 @@ function loadMonitorsFromFile() {
         raw.forEach(m => {
           const monitor = {
             id: m.id || nanoid(8),
+            name: m.name || null,
             url: m.url,
             intervalMs: Number(m.intervalMs) > 1000 ? Number(m.intervalMs) : DEFAULT_INTERVAL_MS,
             history: Array.isArray(m.history) ? m.history.slice(-200) : [],
@@ -123,6 +125,7 @@ async function saveMonitors() {
   for (const [id, monitor] of state.monitors) {
     monitorsObj[id] = {
       id: monitor.id,
+      name: monitor.name,
       url: monitor.url,
       intervalMs: monitor.intervalMs,
       history: monitor.history.slice(-200),
@@ -221,6 +224,7 @@ function uptimeFromHistory(history) {
 app.get('/api/monitors', (req, res) => {
   const list = Array.from(state.monitors.values()).map(m => ({
     id: m.id,
+    name: m.name,
     url: m.url,
     intervalMs: m.intervalMs,
     enabled: m.enabled,
@@ -245,11 +249,14 @@ app.get('/api/monitors/:id', (req, res) => {
 
 /** Create one monitor */
 app.post('/api/monitors', async (req, res) => {
-  let { url, intervalMs } = req.body || {};
+  let { name, url, intervalMs } = req.body || {};
+  
   if (!url || typeof url !== 'string') {
     return res.status(400).json({ error: 'url is required' });
   }
+  
   // normalize
+  name = name ? name.trim() : null;
   url = url.trim();
   if (!/^https?:\/\//i.test(url)) {
     url = 'http://' + url;
@@ -260,6 +267,7 @@ app.post('/api/monitors', async (req, res) => {
   const id = nanoid(8);
   const monitor = {
     id,
+    name,
     url,
     intervalMs,
     history: [],
@@ -274,21 +282,28 @@ app.post('/api/monitors', async (req, res) => {
   res.status(201).json(monitor);
 });
 
-/** Create many monitors at once: { urls: string[], intervalMs? } */
+/** Create many monitors at once: { urls: string[], names: string[], intervalMs? } */
 app.post('/api/monitors/bulk', async (req, res) => {
-  const { urls, intervalMs } = req.body || {};
+  const { urls, names, intervalMs } = req.body || {};
   if (!Array.isArray(urls) || urls.length === 0) {
     return res.status(400).json({ error: 'urls[] is required' });
   }
+  
   const made = [];
-  for (let raw of urls) {
+  for (let i = 0; i < urls.length; i++) {
+    let raw = urls[i];
     if (typeof raw !== 'string') continue;
+    
     let url = raw.trim();
     if (!url) continue;
     if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
+    
     const id = nanoid(8);
+    const name = (Array.isArray(names) && names[i]) ? names[i].trim() : null;
+    
     const m = {
       id,
+      name,
       url,
       intervalMs: Number(intervalMs) || DEFAULT_INTERVAL_MS,
       history: [],
@@ -305,21 +320,31 @@ app.post('/api/monitors/bulk', async (req, res) => {
   res.status(201).json(made);
 });
 
-/** Update monitor (interval, url, enable/disable) */
+/** Update monitor (name, interval, url, enable/disable) */
 app.patch('/api/monitors/:id', async (req, res) => {
   const m = state.monitors.get(req.params.id);
   if (!m) return res.status(404).json({ error: 'Not found' });
-  const { url, intervalMs, enabled } = req.body || {};
+  
+  const { name, url, intervalMs, enabled } = req.body || {};
+  
+  // Update name if provided (empty string or null removes the name)
+  if (name !== undefined) {
+    m.name = name ? name.trim() : null;
+  }
+  
   if (typeof url === 'string' && url.trim()) {
     m.url = /^https?:\/\//i.test(url.trim()) ? url.trim() : 'http://' + url.trim();
   }
+  
   if (intervalMs !== undefined) {
     let iv = Number(intervalMs);
     if (Number.isFinite(iv) && iv >= 2000) m.intervalMs = iv;
   }
+  
   if (enabled !== undefined) {
     m.enabled = !!enabled;
   }
+  
   await saveMonitors();
   if (m.enabled) startTimer(m.id); else stopTimer(m.id);
   res.json(m);
@@ -335,6 +360,23 @@ app.delete('/api/monitors/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+/** Get monitor statistics */
+app.get('/api/stats', (req, res) => {
+  const monitors = Array.from(state.monitors.values());
+  const total = monitors.length;
+  const up = monitors.filter(m => m.lastStatus >= 200 && m.lastStatus < 400).length;
+  const down = total - up;
+  const enabled = monitors.filter(m => m.enabled).length;
+  
+  res.json({
+    total,
+    up,
+    down,
+    enabled,
+    disabled: total - enabled
+  });
+});
+
 /** Sync all monitors to Firebase (manual trigger) */
 app.post('/api/sync', async (req, res) => {
   await saveMonitors();
@@ -343,6 +385,11 @@ app.post('/api/sync', async (req, res) => {
 
 /** Health of the server itself */
 app.get('/health', (_req, res) => res.json({ ok: true }));
+
+/** Serve the main HTML file */
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 /** Boot */
 const PORT = process.env.PORT || 3000;
