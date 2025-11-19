@@ -12,6 +12,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 const DATA_FILE = path.join(__dirname, 'monitors.json');
 const DEFAULT_INTERVAL_MS = 5000; // 5s
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 1000;
 
 // Firebase configuration
 const FIREBASE_URL = "https://test-6977e-default-rtdb.firebaseio.com";
@@ -19,9 +21,39 @@ const MONITORS_PATH = "/monitors";
 
 /** In-memory state; interval handles kept here (won't be written to Firebase) */
 const state = {
-  monitors: new Map(), // id -> { id, name, url, intervalMs, history[], lastStatus, lastLatency, lastChecked, enabled }
-  timers: new Map()    // id -> setInterval handle
+  monitors: new Map(), // id -> { id, name, url, intervalMs, history[], lastStatus, lastLatency, lastChecked, enabled, retryCount, lastError }
+  timers: new Map(),    // id -> setInterval handle
+  alertCallbacks: []    // Array of functions to call when status changes
 };
+
+/** Alert system - you can extend this with email, webhooks, etc. */
+function addAlertCallback(callback) {
+  state.alertCallbacks.push(callback);
+}
+
+function triggerAlert(monitor, wasUp, nowUp, error) {
+  const alert = {
+    monitorId: monitor.id,
+    monitorName: monitor.name || monitor.url,
+    url: monitor.url,
+    timestamp: Date.now(),
+    wasUp,
+    nowUp,
+    error: error?.message,
+    status: monitor.lastStatus,
+    latency: monitor.lastLatency
+  };
+  
+  state.alertCallbacks.forEach(callback => {
+    try {
+      callback(alert);
+    } catch (e) {
+      console.error('Alert callback error:', e.message);
+    }
+  });
+  
+  console.log(`ALERT: ${monitor.name || monitor.url} - ${nowUp ? 'UP' : 'DOWN'} (was ${wasUp ? 'UP' : 'DOWN'})`);
+}
 
 /** Firebase API helpers */
 async function firebaseGet(path) {
@@ -62,7 +94,6 @@ async function loadMonitors() {
     if (data && typeof data === 'object') {
       Object.values(data).forEach(m => {
         if (m && m.url) {
-          // ensure minimal shape with name support
           const monitor = {
             id: m.id || nanoid(8),
             name: m.name || null,
@@ -72,7 +103,11 @@ async function loadMonitors() {
             lastStatus: m.lastStatus ?? null,
             lastLatency: m.lastLatency ?? null,
             lastChecked: m.lastChecked ?? null,
-            enabled: m.enabled !== false
+            enabled: m.enabled !== false,
+            retryCount: m.retryCount || 0,
+            lastError: m.lastError || null,
+            consecutiveFailures: m.consecutiveFailures || 0,
+            forceCheck: false
           };
           state.monitors.set(monitor.id, monitor);
         }
@@ -107,7 +142,11 @@ function loadMonitorsFromFile() {
             lastStatus: m.lastStatus ?? null,
             lastLatency: m.lastLatency ?? null,
             lastChecked: m.lastChecked ?? null,
-            enabled: m.enabled !== false
+            enabled: m.enabled !== false,
+            retryCount: m.retryCount || 0,
+            lastError: m.lastError || null,
+            consecutiveFailures: m.consecutiveFailures || 0,
+            forceCheck: false
           };
           state.monitors.set(monitor.id, monitor);
         });
@@ -132,7 +171,10 @@ async function saveMonitors() {
       lastStatus: monitor.lastStatus,
       lastLatency: monitor.lastLatency,
       lastChecked: monitor.lastChecked,
-      enabled: monitor.enabled
+      enabled: monitor.enabled,
+      retryCount: monitor.retryCount,
+      lastError: monitor.lastError,
+      consecutiveFailures: monitor.consecutiveFailures
     };
   }
   
@@ -154,41 +196,135 @@ function saveMonitorsToFile(monitorsObj) {
   }
 }
 
-/** Ping a URL and record result */
-async function checkOnce(monitor) {
+/** Enhanced ping with retry logic and instant forced checks */
+async function checkOnce(monitor, isForced = false) {
+  // Skip if not enabled and not forced
+  if (!monitor.enabled && !isForced) return;
+  
   const started = Date.now();
-  try {
-    const res = await axios.get(monitor.url, {
-      timeout: Math.max(2000, Math.floor(monitor.intervalMs * 0.8)), // keep timeout under interval
-      validateStatus: () => true // accept all to record non-2xx too
-    });
-    const latency = Date.now() - started;
-    const isUp = res.status >= 200 && res.status < 400;
-    const point = {
-      t: Date.now(),
-      up: isUp,
-      status: res.status,
-      ms: latency
-    };
-    monitor.lastStatus = res.status;
-    monitor.lastLatency = latency;
-    monitor.lastChecked = point.t;
-    monitor.history.push(point);
-    if (monitor.history.length > 200) monitor.history.shift();
-  } catch (err) {
-    const latency = Date.now() - started;
-    const point = {
-      t: Date.now(),
-      up: false,
-      status: 0,
-      ms: latency
-    };
-    monitor.lastStatus = 0;
-    monitor.lastLatency = latency;
-    monitor.lastChecked = point.t;
-    monitor.history.push(point);
-    if (monitor.history.length > 200) monitor.history.shift();
+  let lastError = null;
+  
+  // Retry logic
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const res = await axios.get(monitor.url, {
+        timeout: Math.max(2000, Math.floor(monitor.intervalMs * 0.8)),
+        validateStatus: () => true,
+        headers: {
+          'User-Agent': 'UptimeMonitor/2.0'
+        }
+      });
+      
+      const latency = Date.now() - started;
+      const isUp = res.status >= 200 && res.status < 400;
+      
+      // Track previous state for alerting
+      const wasUp = monitor.lastStatus >= 200 && monitor.lastStatus < 400;
+      
+      const point = {
+        t: Date.now(),
+        up: isUp,
+        status: res.status,
+        ms: latency,
+        attempt: attempt,
+        forced: isForced
+      };
+      
+      monitor.lastStatus = res.status;
+      monitor.lastLatency = latency;
+      monitor.lastChecked = point.t;
+      monitor.lastError = null;
+      monitor.retryCount = 0;
+      
+      // Track consecutive failures/successes
+      if (isUp) {
+        monitor.consecutiveFailures = 0;
+      } else {
+        monitor.consecutiveFailures = (monitor.consecutiveFailures || 0) + 1;
+      }
+      
+      monitor.history.push(point);
+      if (monitor.history.length > 200) monitor.history.shift();
+      
+      // Trigger alert if status changed
+      if (wasUp !== isUp) {
+        triggerAlert(monitor, wasUp, isUp, null);
+      }
+      
+      // If successful, break retry loop
+      if (isUp || attempt === MAX_RETRIES) {
+        break;
+      }
+      
+      // Wait before retry
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+      
+    } catch (err) {
+      lastError = err;
+      const latency = Date.now() - started;
+      
+      // Track previous state for alerting
+      const wasUp = monitor.lastStatus >= 200 && monitor.lastStatus < 400;
+      
+      if (attempt === MAX_RETRIES) {
+        const point = {
+          t: Date.now(),
+          up: false,
+          status: 0,
+          ms: latency,
+          attempt: attempt,
+          forced: isForced,
+          error: err.message
+        };
+        
+        monitor.lastStatus = 0;
+        monitor.lastLatency = latency;
+        monitor.lastChecked = point.t;
+        monitor.lastError = err.message;
+        monitor.retryCount = (monitor.retryCount || 0) + 1;
+        monitor.consecutiveFailures = (monitor.consecutiveFailures || 0) + 1;
+        
+        monitor.history.push(point);
+        if (monitor.history.length > 200) monitor.history.shift();
+        
+        // Trigger alert if going from up to down
+        if (wasUp) {
+          triggerAlert(monitor, wasUp, false, err);
+        }
+      }
+      
+      // Wait before retry (unless last attempt)
+      if (attempt < MAX_RETRIES) {
+        await new Promise(resolve => setTimeout(resolve, RETRY_DELAY_MS));
+      }
+    }
   }
+  
+  // Save state after check
+  await saveMonitors();
+}
+
+/** Force immediate check for a monitor */
+async function forceCheck(id) {
+  const monitor = state.monitors.get(id);
+  if (!monitor) return false;
+  
+  console.log(`Force checking: ${monitor.name || monitor.url}`);
+  await checkOnce(monitor, true);
+  return true;
+}
+
+/** Force check all down monitors */
+async function forceCheckAllDown() {
+  const downMonitors = Array.from(state.monitors.values())
+    .filter(m => m.enabled && (m.lastStatus < 200 || m.lastStatus >= 400));
+  
+  console.log(`Force checking ${downMonitors.length} down monitors`);
+  
+  const promises = downMonitors.map(monitor => checkOnce(monitor, true));
+  await Promise.allSettled(promises);
+  
+  return downMonitors.length;
 }
 
 /** Start or restart the interval timer for a monitor */
@@ -196,6 +332,7 @@ function startTimer(id) {
   stopTimer(id);
   const m = state.monitors.get(id);
   if (!m || !m.enabled) return;
+  
   // immediate check, then interval
   checkOnce(m);
   const h = setInterval(() => checkOnce(m), m.intervalMs);
@@ -218,6 +355,14 @@ function uptimeFromHistory(history) {
   return Math.round((up / history.length) * 1000) / 10; // one decimal
 }
 
+/** Get monitor health status */
+function getHealthStatus(monitor) {
+  if (!monitor.lastChecked) return 'unknown';
+  if (monitor.lastStatus >= 200 && monitor.lastStatus < 400) return 'healthy';
+  if (monitor.consecutiveFailures > 2) return 'critical';
+  return 'unhealthy';
+}
+
 /** --------- API --------- */
 
 /** List monitors (summary) */
@@ -231,7 +376,11 @@ app.get('/api/monitors', (req, res) => {
     lastStatus: m.lastStatus,
     lastLatency: m.lastLatency,
     lastChecked: m.lastChecked,
-    uptimePct: uptimeFromHistory(m.history)
+    uptimePct: uptimeFromHistory(m.history),
+    health: getHealthStatus(m),
+    retryCount: m.retryCount,
+    consecutiveFailures: m.consecutiveFailures,
+    lastError: m.lastError
   }));
   res.json(list);
 });
@@ -243,6 +392,7 @@ app.get('/api/monitors/:id', (req, res) => {
   const limit = Math.min(200, Number(req.query.limit) || 100);
   res.json({
     ...m,
+    health: getHealthStatus(m),
     history: m.history.slice(-limit)
   });
 });
@@ -274,7 +424,11 @@ app.post('/api/monitors', async (req, res) => {
     lastStatus: null,
     lastLatency: null,
     lastChecked: null,
-    enabled: true
+    enabled: true,
+    retryCount: 0,
+    lastError: null,
+    consecutiveFailures: 0,
+    forceCheck: false
   };
   state.monitors.set(id, monitor);
   await saveMonitors();
@@ -310,7 +464,11 @@ app.post('/api/monitors/bulk', async (req, res) => {
       lastStatus: null,
       lastLatency: null,
       lastChecked: null,
-      enabled: true
+      enabled: true,
+      retryCount: 0,
+      lastError: null,
+      consecutiveFailures: 0,
+      forceCheck: false
     };
     state.monitors.set(id, m);
     startTimer(id);
@@ -360,6 +518,33 @@ app.delete('/api/monitors/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+/** Force immediate check of a monitor */
+app.post('/api/monitors/:id/force-check', async (req, res) => {
+  const success = await forceCheck(req.params.id);
+  if (!success) return res.status(404).json({ error: 'Monitor not found' });
+  res.json({ ok: true, message: 'Forced check completed' });
+});
+
+/** Force check all down monitors */
+app.post('/api/monitors/force-check-down', async (req, res) => {
+  const count = await forceCheckAllDown();
+  res.json({ ok: true, checked: count, message: `Force checked ${count} down monitors` });
+});
+
+/** Reset monitor statistics */
+app.post('/api/monitors/:id/reset', async (req, res) => {
+  const m = state.monitors.get(req.params.id);
+  if (!m) return res.status(404).json({ error: 'Not found' });
+  
+  m.history = [];
+  m.retryCount = 0;
+  m.consecutiveFailures = 0;
+  m.lastError = null;
+  
+  await saveMonitors();
+  res.json({ ok: true, message: 'Statistics reset' });
+});
+
 /** Get monitor statistics */
 app.get('/api/stats', (req, res) => {
   const monitors = Array.from(state.monitors.values());
@@ -367,14 +552,50 @@ app.get('/api/stats', (req, res) => {
   const up = monitors.filter(m => m.lastStatus >= 200 && m.lastStatus < 400).length;
   const down = total - up;
   const enabled = monitors.filter(m => m.enabled).length;
+  const critical = monitors.filter(m => getHealthStatus(m) === 'critical').length;
+  
+  // Calculate overall uptime percentage
+  const totalUptime = monitors.reduce((sum, m) => sum + uptimeFromHistory(m.history), 0) / total;
   
   res.json({
     total,
     up,
     down,
     enabled,
-    disabled: total - enabled
+    disabled: total - enabled,
+    critical,
+    overallUptime: Math.round(totalUptime * 10) / 10
   });
+});
+
+/** Get recent alerts/events */
+app.get('/api/events', (req, res) => {
+  const allEvents = [];
+  const limit = Math.min(100, Number(req.query.limit) || 50);
+  
+  for (const monitor of state.monitors.values()) {
+    const events = monitor.history
+      .filter(h => h.forced || h.attempt > 1 || h.error)
+      .slice(-10)
+      .map(h => ({
+        monitorId: monitor.id,
+        monitorName: monitor.name || monitor.url,
+        timestamp: h.t,
+        status: h.status,
+        up: h.up,
+        latency: h.ms,
+        attempt: h.attempt,
+        forced: h.forced,
+        error: h.error
+      }));
+    
+    allEvents.push(...events);
+  }
+  
+  // Sort by timestamp, most recent first
+  allEvents.sort((a, b) => b.timestamp - a.timestamp);
+  
+  res.json(allEvents.slice(0, limit));
 });
 
 /** Sync all monitors to Firebase (manual trigger) */
@@ -384,7 +605,11 @@ app.post('/api/sync', async (req, res) => {
 });
 
 /** Health of the server itself */
-app.get('/health', (_req, res) => res.json({ ok: true }));
+app.get('/health', (_req, res) => res.json({ 
+  ok: true, 
+  monitors: state.monitors.size,
+  uptime: process.uptime()
+}));
 
 /** Serve the main HTML file */
 app.get('/', (req, res) => {
@@ -394,21 +619,42 @@ app.get('/', (req, res) => {
 /** Boot */
 const PORT = process.env.PORT || 3000;
 
+// Add console alerting by default
+addAlertCallback((alert) => {
+  const time = new Date(alert.timestamp).toLocaleTimeString();
+  const status = alert.nowUp ? '✅ BACK UP' : '❌ WENT DOWN';
+  console.log(`[${time}] ${status} ${alert.monitorName} - ${alert.status} (${alert.latency}ms)`);
+});
+
 // Load monitors and start server
 loadMonitors().then(() => {
   app.listen(PORT, () => {
-    console.log(`Uptime monitor running on http://localhost:${PORT}`);
+    console.log(`Advanced Uptime Monitor running on http://localhost:${PORT}`);
     console.log(`Open http://localhost:${PORT} to view the dashboard`);
     console.log(`Firebase URL: ${FIREBASE_URL}`);
+    console.log(`Features: Retry logic, forced checks, alerts, health status`);
   });
 });
 
+// Auto force-check down monitors every 30 seconds
+setInterval(() => {
+  const downMonitors = Array.from(state.monitors.values())
+    .filter(m => m.enabled && (m.lastStatus < 200 || m.lastStatus >= 400));
+  
+  if (downMonitors.length > 0) {
+    console.log(`Auto force-checking ${downMonitors.length} down monitors`);
+    downMonitors.forEach(monitor => forceCheck(monitor.id));
+  }
+}, 30000);
+
 // Graceful shutdown
 process.on('SIGINT', async () => { 
+  console.log('Shutting down gracefully...');
   await saveMonitors(); 
   process.exit(0); 
 });
 process.on('SIGTERM', async () => { 
+  console.log('Shutting down gracefully...');
   await saveMonitors(); 
   process.exit(0); 
 });
