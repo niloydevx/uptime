@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>NILOY Server</title>
+  <title>Advanced Uptime Monitor</title>
   <style>
     * {
       box-sizing: border-box;
@@ -624,7 +624,8 @@
 <body>
   <div class="container">
     <header>
-      <h1>NILOY Server</h1>      
+      <h1>🚀 Advanced Uptime Monitor</h1>
+      <p class="subtitle">Enterprise-grade monitoring with instant recovery & advanced alerts</p>
     </header>
 
     <div class="stats-bar" id="statsBar" style="display: none;">
@@ -634,11 +635,11 @@
       </div>
       <div class="stat-card">
         <div class="stat-value stat-up" id="statUp">0</div>
-        <div class="stat-label">Up</div>
+        <div class="stat-label">Services Up</div>
       </div>
       <div class="stat-card">
         <div class="stat-value stat-down" id="statDown">0</div>
-        <div class="stat-label">Down</div>
+        <div class="stat-label">Services Down</div>
       </div>
       <div class="stat-card">
         <div class="stat-value stat-critical" id="statCritical">0</div>
@@ -749,7 +750,7 @@
           </div>
           <div class="pagination-controls">
             <button class="pagination-btn" id="prevPage" disabled>Previous</button>
-            
+            <div class="pagination-numbers" id="paginationNumbers"></div>
             <button class="pagination-btn" id="nextPage" disabled>Next</button>
           </div>
           <div class="page-size-selector">
