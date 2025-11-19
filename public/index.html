@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Mini Uptime Monitor</title>
+  <title>Uptime Monitor</title>
   <style>
     * {
       box-sizing: border-box;
@@ -22,7 +22,7 @@
     }
     
     .container {
-      max-width: 1400px;
+      max-width: 1600px;
       margin: 0 auto;
       padding: 24px;
     }
@@ -173,6 +173,38 @@
       transform: translateY(-1px);
     }
     
+    .btn-warning {
+      background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+      color: white;
+      border: none;
+      font-weight: 500;
+      cursor: pointer;
+      padding: 10px 18px;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    
+    .btn-warning:hover {
+      background: linear-gradient(135deg, #b45309 0%, #92400e 100%);
+      transform: translateY(-1px);
+    }
+    
+    .btn-success {
+      background: linear-gradient(135deg, #059669 0%, #047857 100%);
+      color: white;
+      border: none;
+      font-weight: 500;
+      cursor: pointer;
+      padding: 10px 18px;
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    
+    .btn-success:hover {
+      background: linear-gradient(135deg, #047857 0%, #065f46 100%);
+      transform: translateY(-1px);
+    }
+    
     .table-container {
       overflow-x: auto;
       border-radius: 16px;
@@ -184,7 +216,7 @@
       width: 100%;
       border-collapse: collapse;
       background: #1e293b;
-      min-width: 1000px;
+      min-width: 1200px;
     }
     
     thead {
@@ -271,6 +303,22 @@
       background: #fbbf24;
     }
     
+    .status-critical {
+      background: rgba(220, 38, 38, 0.25);
+      color: #fca5a5;
+      border: 1px solid rgba(220, 38, 38, 0.4);
+      animation: critical-pulse 1s infinite;
+    }
+    
+    @keyframes critical-pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    
+    .status-critical::before {
+      background: #fca5a5;
+    }
+    
     .monitor-name {
       font-weight: 600;
       color: #f8fafc;
@@ -329,9 +377,19 @@
       white-space: nowrap;
     }
     
+    .error-text {
+      font-size: 11px;
+      color: #f87171;
+      margin-top: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 200px;
+    }
+    
     .actions {
       display: flex;
-      gap: 10px;
+      gap: 8px;
       flex-wrap: nowrap;
     }
     
@@ -405,6 +463,13 @@
     
     .stat-total { 
       background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    
+    .stat-critical { 
+      background: linear-gradient(135deg, #f87171 0%, #dc2626 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
@@ -504,13 +569,63 @@
       color: #cbd5e1;
       font-size: 13px;
     }
+
+    /* Bulk Actions */
+    .bulk-actions {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    /* Alert Banner */
+    .alert-banner {
+      background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+      color: white;
+      padding: 16px 24px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      animation: slideDown 0.3s ease;
+    }
+
+    @keyframes slideDown {
+      from { transform: translateY(-10px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    .alert-content {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .alert-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .health-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      display: inline-block;
+      margin-right: 6px;
+    }
+
+    .health-healthy { background: #4ade80; }
+    .health-unhealthy { background: #fbbf24; }
+    .health-critical { background: #f87171; }
+    .health-unknown { background: #94a3b8; }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
-      <h1>🎯 Uptime Monitor</h1>
-      <p class="subtitle">Enterprise-grade monitoring with real-time insights</p>
+      <h1>NILOY Server</h1>
+      
     </header>
 
     <div class="stats-bar" id="statsBar" style="display: none;">
@@ -525,6 +640,25 @@
       <div class="stat-card">
         <div class="stat-value stat-down" id="statDown">0</div>
         <div class="stat-label">Services Down</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value stat-critical" id="statCritical">0</div>
+        <div class="stat-label">Critical</div>
+      </div>
+    </div>
+
+    <!-- Alert Banner for Down Services -->
+    <div class="alert-banner" id="alertBanner" style="display: none;">
+      <div class="alert-content">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+          <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+        <span id="alertMessage"></span>
+      </div>
+      <div class="alert-actions">
+        <button class="btn-warning" onclick="forceCheckAllDown()">Force Check All</button>
+        <button class="btn-secondary" onclick="hideAlert()">Dismiss</button>
       </div>
     </div>
 
@@ -564,13 +698,30 @@
       </div>
     </div>
 
+    <!-- Bulk Actions -->
+    <div class="bulk-actions" id="bulkActions" style="display: none;">
+      <button class="btn-warning" onclick="forceCheckAllDown()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M23 4v6h-6M1 20v-6h6"/>
+          <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+        </svg>
+        Force Check Down Services
+      </button>
+      <button class="btn-success" onclick="showBulkAddModal()">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 5v14m-7-7h14"/>
+        </svg>
+        Bulk Add URLs
+      </button>
+    </div>
+
     <div class="card" style="padding: 0;">
       <div class="table-container">
         <table id="tbl">
           <thead>
             <tr>
               <th>Monitor</th>
-              <th>Status</th>
+              <th>Status & Health</th>
               <th>Latency</th>
               <th>Uptime</th>
               <th>Last Check</th>
@@ -616,6 +767,36 @@
     </div>
   </div>
 
+  <!-- Bulk Add Modal -->
+  <div id="bulkAddModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center;">
+    <div class="card" style="max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto;">
+      <h2 style="margin-bottom: 20px; font-size: 20px; color: #f8fafc;">Bulk Add URLs</h2>
+      <div class="form-group">
+        <label for="bulkUrls">URLs (one per line)</label>
+        <textarea id="bulkUrls" placeholder="https://example.com&#10;https://api.example.com&#10;http://test-server.com" 
+                  style="height: 200px; padding: 16px; border: 1px solid #475569; border-radius: 10px; background: #334155; color: #f1f5f9; font-family: inherit; resize: vertical;"></textarea>
+      </div>
+      <div class="form-group">
+        <label for="bulkInterval">Check Interval</label>
+        <select id="bulkInterval">
+          <option value="5000">Every 5 seconds</option>
+          <option value="10000">Every 10 seconds</option>
+          <option value="30000">Every 30 seconds</option>
+          <option value="60000">Every 1 minute</option>
+          <option value="300000">Every 5 minutes</option>
+        </select>
+      </div>
+      <div style="display: flex; gap: 12px; margin-top: 20px;">
+        <button class="btn-primary" onclick="addBulkMonitors()" style="flex: 1;">
+          Add Monitors
+        </button>
+        <button class="btn-secondary" onclick="hideBulkAddModal()" style="flex: 1;">
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+
   <script>
     const $ = s => document.querySelector(s);
     const rows = $("#rows");
@@ -626,6 +807,8 @@
     const prevPageBtn = $("#prevPage");
     const nextPageBtn = $("#nextPage");
     const pageSizeSelect = $("#pageSize");
+    const alertBanner = $("#alertBanner");
+    const bulkActions = $("#bulkActions");
 
     let allMonitors = [];
     let currentPage = 1;
@@ -682,9 +865,22 @@
       return 'latency-slow';
     }
 
+    function getHealthClass(health) {
+      switch(health) {
+        case 'healthy': return 'health-healthy';
+        case 'unhealthy': return 'health-unhealthy';
+        case 'critical': return 'health-critical';
+        default: return 'health-unknown';
+      }
+    }
+
     function getStatusBadge(monitor) {
       if (!monitor.lastStatus) {
         return `<span class="status-badge status-pending">Pending</span>`;
+      }
+      
+      if (monitor.health === 'critical') {
+        return `<span class="status-badge status-critical">CRITICAL (${monitor.lastStatus})</span>`;
       }
       
       if (monitor.lastStatus >= 200 && monitor.lastStatus < 400) {
@@ -728,6 +924,7 @@
       
       // Show/hide pagination
       paginationContainer.style.display = totalMonitors > 0 ? 'flex' : 'none';
+      bulkActions.style.display = totalMonitors > 0 ? 'flex' : 'none';
     }
 
     function goToPage(page) {
@@ -761,8 +958,18 @@
           <td>
             <div class="monitor-name" title="${m.name || m.url}">${m.name || m.url}</div>
             ${m.name ? `<div class="monitor-url" title="${m.url}">${m.url}</div>` : ''}
+            ${m.lastError ? `<div class="error-text" title="${m.lastError}">${m.lastError}</div>` : ''}
           </td>
-          <td>${getStatusBadge(m)}</td>
+          <td>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              ${getStatusBadge(m)}
+              <div style="font-size: 12px; color: #94a3b8;">
+                <span class="health-indicator ${getHealthClass(m.health)}"></span>
+                ${m.health?.toUpperCase() || 'UNKNOWN'}
+                ${m.consecutiveFailures > 0 ? ` · ${m.consecutiveFailures} fails` : ''}
+              </div>
+            </div>
+          </td>
           <td>
             <span class="latency-value ${getLatencyClass(m.lastLatency)}">
               ${formatLatency(m.lastLatency)}
@@ -781,6 +988,12 @@
           </td>
           <td>
             <div class="actions">
+              <button class="btn-warning" onclick="forceCheck('${m.id}')" title="Force immediate check">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M23 4v6h-6M1 20v-6h6"/>
+                  <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+                </svg>
+              </button>
               <button class="btn-secondary" onclick="toggleMonitor('${m.id}', ${!m.enabled})">
                 ${m.enabled ? 'Pause' : 'Resume'}
               </button>
@@ -801,6 +1014,7 @@
         updateStats(allMonitors);
         updatePagination();
         renderTable();
+        checkAlerts(allMonitors);
       } catch (error) {
         console.error('Failed to fetch monitors:', error);
       }
@@ -816,10 +1030,36 @@
       const total = monitors.length;
       const up = monitors.filter(m => m.lastStatus >= 200 && m.lastStatus < 400).length;
       const down = total - up;
+      const critical = monitors.filter(m => m.health === 'critical').length;
       
       $("#statTotal").textContent = total;
       $("#statUp").textContent = up;
       $("#statDown").textContent = down;
+      $("#statCritical").textContent = critical;
+    }
+
+    function checkAlerts(monitors) {
+      const downMonitors = monitors.filter(m => 
+        m.enabled && (m.lastStatus < 200 || m.lastStatus >= 400)
+      );
+      
+      const criticalMonitors = monitors.filter(m => m.health === 'critical');
+      
+      if (downMonitors.length > 0) {
+        const message = `${downMonitors.length} service${downMonitors.length > 1 ? 's' : ''} down${criticalMonitors.length > 0 ? `, ${criticalMonitors.length} critical` : ''}`;
+        showAlert(message);
+      } else {
+        hideAlert();
+      }
+    }
+
+    function showAlert(message) {
+      $("#alertMessage").textContent = message;
+      alertBanner.style.display = 'flex';
+    }
+
+    function hideAlert() {
+      alertBanner.style.display = 'none';
     }
 
     async function toggleMonitor(id, enabled) {
@@ -845,6 +1085,76 @@
         fetchList();
       } catch (error) {
         console.error('Failed to delete monitor:', error);
+      }
+    }
+
+    async function forceCheck(id) {
+      try {
+        await fetch('/api/monitors/' + id + '/force-check', {
+          method: 'POST'
+        });
+        // Refresh after a short delay to see the result
+        setTimeout(fetchList, 1000);
+      } catch (error) {
+        console.error('Failed to force check:', error);
+      }
+    }
+
+    async function forceCheckAllDown() {
+      try {
+        const response = await fetch('/api/monitors/force-check-down', {
+          method: 'POST'
+        });
+        const result = await response.json();
+        alert(`Force checked ${result.checked} down monitors`);
+        // Refresh after a short delay
+        setTimeout(fetchList, 2000);
+      } catch (error) {
+        console.error('Failed to force check all:', error);
+      }
+    }
+
+    function showBulkAddModal() {
+      $("#bulkAddModal").style.display = 'flex';
+    }
+
+    function hideBulkAddModal() {
+      $("#bulkAddModal").style.display = 'none';
+    }
+
+    async function addBulkMonitors() {
+      const urlsText = $("#bulkUrls").value.trim();
+      const intervalMs = Number($("#bulkInterval").value) || 5000;
+      
+      if (!urlsText) {
+        alert('Please enter at least one URL');
+        return;
+      }
+      
+      const urls = urlsText.split('\n')
+        .map(url => url.trim())
+        .filter(url => url.length > 0);
+      
+      if (urls.length === 0) {
+        alert('Please enter valid URLs');
+        return;
+      }
+      
+      try {
+        await fetch('/api/monitors/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ urls, intervalMs })
+        });
+        
+        hideBulkAddModal();
+        $("#bulkUrls").value = '';
+        fetchList();
+        
+        alert(`Successfully added ${urls.length} monitors`);
+      } catch (error) {
+        console.error('Failed to add bulk monitors:', error);
+        alert('Failed to add monitors. Please try again.');
       }
     }
 
@@ -912,9 +1222,16 @@
       renderTable();
     };
 
+    // Close modal when clicking outside
+    $("#bulkAddModal").onclick = (e) => {
+      if (e.target.id === 'bulkAddModal') {
+        hideBulkAddModal();
+      }
+    };
+
     // Initialize
     fetchList();
     setInterval(fetchList, 3000);
   </script>
 </body>
-</html>   also update this based on backend
+</html>
